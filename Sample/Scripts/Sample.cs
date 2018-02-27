@@ -75,8 +75,8 @@ public class SampleApp : Application
         CreateScene();
         SetupViewport();
 
-        _input = new TopDownInput(Input);
-        _cameraController = new TopDownCameraController(_input, CameraNode);
+        _input = new TopDownInput(Input,Graphics);
+        _cameraController = new TopDownCameraController(_input, Graphics, CameraNode);
         _input.Enable();
     }
 
@@ -99,15 +99,15 @@ public class SampleApp : Application
     private void InitTouchInput()
     {
         TouchEnabled = true;
-        var layout = ResourceCache.GetXmlFile("UI/ScreenJoystick.xml");
-        if (!string.IsNullOrEmpty(JoystickLayoutPatch))
-        {
-            var patchXmlFile = new XmlFile();
-            patchXmlFile.FromString(JoystickLayoutPatch);
-            layout.Patch(patchXmlFile);
-        }
-        var screenJoystickIndex = Input.AddScreenJoystick(layout, ResourceCache.GetXmlFile("UI/DefaultStyle.xml"));
-        Input.SetScreenJoystickVisible(screenJoystickIndex, true);
+        //var layout = ResourceCache.GetXmlFile("UI/ScreenJoystick.xml");
+        //if (!string.IsNullOrEmpty(JoystickLayoutPatch))
+        //{
+        //    var patchXmlFile = new XmlFile();
+        //    patchXmlFile.FromString(JoystickLayoutPatch);
+        //    layout.Patch(patchXmlFile);
+        //}
+        //var screenJoystickIndex = Input.AddScreenJoystick(layout, ResourceCache.GetXmlFile("UI/DefaultStyle.xml"));
+        //Input.SetScreenJoystickVisible(screenJoystickIndex, true);
     }
 
     protected override void OnUpdate(float timeStep)
