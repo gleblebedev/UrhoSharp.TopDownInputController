@@ -173,8 +173,7 @@ namespace Urho.TopDownCamera
 
         private InputRaycastResult Move(InputRaycastResult contact, IntVector2 screenPosition)
         {
-            InputRaycastResult res = _environment.RaycastToPlane(screenPosition, new Plane(Vector3.Up, contact.ContactPoint));
-            return new InputRaycastResult(res.Position,res.Ray,res.ContactPoint,contact.UserContext);
+            return _environment.RaycastToPlane(screenPosition, new Plane(contact.Normal, contact.ContactPoint), contact.UserContext);
         }
 
         private void HandleTouchEnd(TouchEndEventArgs args)
@@ -463,8 +462,7 @@ namespace Urho.TopDownCamera
 
             var screenCenter = _environment.SceenSize / 2;
             var centralContact = _environment.Raycast(screenCenter);
-            var newContact =
-                _environment.RaycastToPlane(screenCenter + delta, new Plane(Vector3.Up, centralContact.ContactPoint));
+            var newContact = _environment.RaycastToPlane(screenCenter + delta, new Plane(centralContact.Normal, centralContact.ContactPoint), centralContact.UserContext);
             Pan?.Invoke(this, new PanInteractionEventArgs(centralContact, newContact));
         }
     }

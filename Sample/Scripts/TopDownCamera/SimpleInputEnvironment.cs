@@ -6,8 +6,9 @@
         {
         }
 
-        protected override void Raycast(Ray ray, out Vector3 contactPoint, out object userContext)
+        protected override void Raycast(Ray ray, out Vector3 contactPoint, out Vector3 normal, out object userContext)
         {
+            normal = Vector3.Up;
             userContext = null;
             var dy = ray.Direction.Y;
             if (dy <= 0.01f && dy >= -0.01f)
