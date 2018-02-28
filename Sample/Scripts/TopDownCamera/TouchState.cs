@@ -3,7 +3,7 @@
     internal class TouchState
     {
         public int ID { get; internal set; }
-        public IntVector2 Position { get; internal set; }
+        public IntVector2 ScreenPosition { get; internal set; }
         public float Pressure { get; internal set; }
         public float Duration { get; internal set; }
 
@@ -14,7 +14,7 @@
 
         public void Update(TouchState touch)
         {
-            Position = touch.Position;
+            ScreenPosition = touch.ScreenPosition;
             Pressure = touch.Pressure;
         }
     }

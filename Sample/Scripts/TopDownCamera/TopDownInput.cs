@@ -8,14 +8,15 @@ namespace Urho.TopDownCamera
     {
         private const int MouseTouchID = int.MinValue;
         private readonly List<TouchState> _activeTouches = new List<TouchState>(4);
-        private readonly Graphics _graphics;
+        private readonly IInputEnvironment _environment;
+        private Camera _camera;
 
         private bool _isEnabled;
 
         private TouchState _mouseTouch;
         private float _panningAngle;
 
-        private IntVector2 _panningCenter;
+        private IntVector2 _multitouchCenter;
         private int _panningDistance;
         private bool _potentialClick;
 
@@ -23,7 +24,7 @@ namespace Urho.TopDownCamera
         private bool _prevMouseGrabbed;
         private MouseMode _prevMouseMode;
         private bool _prevMouseVisible;
-        private IntVector2 _rightClickStart;
+        private InputRaycastResult _rightClickStart;
 
         private TouchState _rigthClick;
 
@@ -32,9 +33,9 @@ namespace Urho.TopDownCamera
 
         private readonly float JoystickScrollSpeed = 0.25f;
 
-        public TopDownInput(Input input, Graphics graphics)
+        public TopDownInput(Input input, IInputEnvironment environment)
         {
-            _graphics = graphics;
+            _environment = environment;
             Input = input;
         }
 
@@ -43,6 +44,12 @@ namespace Urho.TopDownCamera
         public int ClickThresholdSquared { get; set; } = 4;
 
         public float AltClickDuration { get; set; } = 1;
+
+        public Camera Camera
+        {
+            get { return _camera; }
+            set { _camera = value; }
+        }
 
 
         public void Dispose()
@@ -110,7 +117,7 @@ namespace Urho.TopDownCamera
             MoveTouch(new TouchState
             {
                 ID = args.TouchID,
-                Position = new IntVector2(args.X, args.Y),
+                ScreenPosition = new IntVector2(args.X, args.Y),
                 Pressure = args.Pressure
             });
         }
@@ -121,38 +128,42 @@ namespace Urho.TopDownCamera
             if (index < 0) return;
             if (_activeTouches.Count == 1)
             {
+                var dist = touch.ScreenPosition - _activeTouches[index].ScreenPosition;
+                var contact = _environment.Raycast(touch.ScreenPosition);
                 if (_potentialClick)
                 {
-                    var dist = touch.Position - _activeTouches[0].Position;
                     if (dist.LengthSquared < ClickThresholdSquared) return;
                     _potentialClick = false;
-                    ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(touch.Position));
+                    ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(contact));
                 }
 
-                Pan?.Invoke(this,
-                    new PanInteractionEventArgs(touch.Position, touch.Position - _activeTouches[0].Position));
+                Pan?.Invoke(this, new PanInteractionEventArgs(Move(contact,_activeTouches[index].ScreenPosition), contact));
             }
             else if (_activeTouches.Count >= 2)
             {
-                var center = _panningCenter;
+                var center = _multitouchCenter;
                 var dist = _panningDistance;
                 var angle = _panningAngle;
                 CalculatePanning(out center, out dist, ref angle);
-                if (center != _panningCenter)
+                if (center != _multitouchCenter)
                 {
-                    Pan?.Invoke(this, new PanInteractionEventArgs(center, center - _panningCenter));
-                    _panningCenter = center;
+                    var oldContact = _environment.Raycast(_multitouchCenter);
+                    var newContact = _environment.Raycast(center); 
+                    Pan?.Invoke(this, new PanInteractionEventArgs(oldContact, newContact));
+                    _multitouchCenter = center;
                 }
 
                 if (angle != _panningAngle)
                 {
-                    Rotate?.Invoke(this, new RotateInteractionEventArgs(center, angle - _panningAngle));
+                    var oldContact = _environment.Raycast(_multitouchCenter);
+                    Rotate?.Invoke(this, new RotateInteractionEventArgs(oldContact, angle - _panningAngle));
                     _panningAngle = angle;
                 }
 
                 if (dist != _panningDistance)
                 {
-                    Zoom?.Invoke(this, new ZoomInteractionEventArgs(center, dist - _panningDistance));
+                    var oldContact = _environment.Raycast(_multitouchCenter);
+                    Zoom?.Invoke(this, new ZoomInteractionEventArgs(oldContact, dist - _panningDistance));
                     _panningDistance = dist;
                 }
             }
@@ -160,12 +171,18 @@ namespace Urho.TopDownCamera
             _activeTouches[index].Update(touch);
         }
 
+        private InputRaycastResult Move(InputRaycastResult contact, IntVector2 screenPosition)
+        {
+            InputRaycastResult res = _environment.RaycastToPlane(screenPosition, new Plane(Vector3.Up, contact.ContactPoint));
+            return new InputRaycastResult(res.Position,res.Ray,res.ContactPoint,contact.UserContext);
+        }
+
         private void HandleTouchEnd(TouchEndEventArgs args)
         {
             EndTouch(new TouchState
             {
                 ID = args.TouchID,
-                Position = new IntVector2(args.X, args.Y),
+                ScreenPosition = new IntVector2(args.X, args.Y),
                 Pressure = 0.0f
             });
         }
@@ -174,21 +191,21 @@ namespace Urho.TopDownCamera
         {
             var index = IndexOfTouch(touch);
             if (index < 0) return;
-
             var duration = _activeTouches[index].Duration;
             _activeTouches.RemoveAt(index);
             if (_activeTouches.Count == 0)
             {
                 if (_potentialClick)
                 {
+                    var contact = _environment.Raycast(touch.ScreenPosition);
                     if (duration > AltClickDuration)
                     {
-                        ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(touch.Position));
-                        AltClickComplete?.Invoke(this, new SimpleInteractionEventArgs(touch.Position));
+                        ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(contact));
+                        AltClickComplete?.Invoke(this, new SimpleInteractionEventArgs(contact));
                     }
                     else
                     {
-                        ClickComplete?.Invoke(this, new SimpleInteractionEventArgs(touch.Position));
+                        ClickComplete?.Invoke(this, new SimpleInteractionEventArgs(contact));
                     }
 
                     _potentialClick = true;
@@ -196,7 +213,7 @@ namespace Urho.TopDownCamera
             }
             else if (_activeTouches.Count >= 2)
             {
-                CalculatePanning(out _panningCenter, out _panningDistance, ref _panningAngle);
+                UpdateMultitouch();
             }
         }
 
@@ -205,7 +222,7 @@ namespace Urho.TopDownCamera
             StartTouch(new TouchState
             {
                 ID = args.TouchID,
-                Position = new IntVector2(args.X, args.Y),
+                ScreenPosition = new IntVector2(args.X, args.Y),
                 Pressure = args.Pressure
             });
         }
@@ -225,7 +242,8 @@ namespace Urho.TopDownCamera
 
         private SimpleInteractionEventArgs GetSimleEventArg()
         {
-            return new SimpleInteractionEventArgs(new IntVector2(_graphics.Width / 2, _graphics.Height / 2));
+            var contact = _environment.Raycast(_environment.SceenSize/2);
+            return new SimpleInteractionEventArgs(contact);
         }
 
         private void HandleJoystickButtonDown(JoystickButtonDownEventArgs args)
@@ -242,28 +260,29 @@ namespace Urho.TopDownCamera
         {
             if (_mouseTouch != null)
             {
-                _mouseTouch = new TouchState {ID = MouseTouchID, Position = Input.MousePosition, Pressure = 0.0f};
+                _mouseTouch = new TouchState {ID = MouseTouchID, ScreenPosition = Input.MousePosition, Pressure = 0.0f};
                 MoveTouch(_mouseTouch);
             }
 
             if (_rigthClick != null)
             {
                 var position = Input.MousePosition;
-                var diff = (position - _rigthClick.Position).LengthSquared;
+                var diff = (position - _rigthClick.ScreenPosition).LengthSquared;
                 if (diff > 2) _potentialRightClick = false;
 
                 if (!_potentialRightClick)
                 {
-                    Rotate?.Invoke(this,
-                        new RotateInteractionEventArgs(_rightClickStart, position.X - _rigthClick.Position.X));
-                    _rigthClick.Position = position;
+                    var contact = _environment.Raycast(_environment.SceenSize / 2);
+                    Rotate?.Invoke(this, new RotateInteractionEventArgs(contact, position.X - _rigthClick.ScreenPosition.X));
+                    _rigthClick.ScreenPosition = Input.MousePosition;
                 }
             }
         }
 
         private void HandleMouseWheel(MouseWheelEventArgs args)
         {
-            Zoom?.Invoke(this, new ZoomInteractionEventArgs(Input.MousePosition, args.Wheel * 120));
+            var contact = _environment.Raycast(Input.MousePosition);
+            Zoom?.Invoke(this, new ZoomInteractionEventArgs(contact, args.Wheel * 120));
         }
 
         private void HandleMouseButtonDown(MouseButtonDownEventArgs args)
@@ -271,14 +290,14 @@ namespace Urho.TopDownCamera
             if (args.Button == 1)
                 if (_mouseTouch == null)
                 {
-                    _mouseTouch = new TouchState {ID = MouseTouchID, Position = Input.MousePosition, Pressure = 1.0f};
+                    _mouseTouch = new TouchState {ID = MouseTouchID, ScreenPosition = Input.MousePosition, Pressure = 1.0f};
                     StartTouch(_mouseTouch);
                 }
 
             if (args.Button == 4)
             {
-                _rigthClick = new TouchState {ID = MouseTouchID, Position = Input.MousePosition, Pressure = 1.0f};
-                _rightClickStart = _rigthClick.Position;
+                _rigthClick = new TouchState {ID = MouseTouchID, ScreenPosition = Input.MousePosition, Pressure = 1.0f};
+                _rightClickStart = _environment.Raycast(Input.MousePosition);
                 _potentialRightClick = true;
             }
         }
@@ -295,25 +314,30 @@ namespace Urho.TopDownCamera
             _activeTouches.Add(touch);
             if (_activeTouches.Count == 1)
             {
-                ProbablyClick?.Invoke(this, new SimpleInteractionEventArgs(touch.Position));
+                ProbablyClick?.Invoke(this, new SimpleInteractionEventArgs(_environment.Raycast(touch.ScreenPosition)));
                 _potentialClick = true;
             }
             else if (_activeTouches.Count == 2)
             {
                 if (_potentialClick)
                 {
-                    ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(_activeTouches[0].Position));
+                    ClickCanceled?.Invoke(this, new SimpleInteractionEventArgs(_environment.Raycast(_activeTouches[0].ScreenPosition)));
                     _potentialClick = false;
                 }
 
-                CalculatePanning(out _panningCenter, out _panningDistance, ref _panningAngle);
+                UpdateMultitouch();
             }
+        }
+
+        private void UpdateMultitouch()
+        {
+            CalculatePanning(out _multitouchCenter, out _panningDistance, ref _panningAngle);
         }
 
         private void CalculatePanning(out IntVector2 panningCenter, out int panningDistance, ref float panningAngle)
         {
-            var ab = _activeTouches[1].Position - _activeTouches[0].Position;
-            panningCenter = _activeTouches[0].Position + ab / 2;
+            var ab = _activeTouches[1].ScreenPosition - _activeTouches[0].ScreenPosition;
+            panningCenter = _activeTouches[0].ScreenPosition + ab / 2;
             panningDistance = ab.Length;
             if (panningDistance > 0)
             {
@@ -347,7 +371,7 @@ namespace Urho.TopDownCamera
             if (args.Button == 1)
                 if (_mouseTouch != null)
                 {
-                    _mouseTouch = new TouchState {ID = MouseTouchID, Position = Input.MousePosition, Pressure = 0.0f};
+                    _mouseTouch = new TouchState {ID = MouseTouchID, ScreenPosition = Input.MousePosition, Pressure = 0.0f};
                     EndTouch(_mouseTouch);
                     _mouseTouch = null;
                 }
@@ -356,7 +380,7 @@ namespace Urho.TopDownCamera
             {
                 if (_potentialRightClick)
                 {
-                    AltClickComplete?.Invoke(this, new SimpleInteractionEventArgs(Input.MousePosition));
+                    AltClickComplete?.Invoke(this, new SimpleInteractionEventArgs(_environment.Raycast(Input.MousePosition)));
                     _potentialRightClick = false;
                 }
 
@@ -397,22 +421,21 @@ namespace Urho.TopDownCamera
                 JoystickState state;
                 if (Input.TryGetJoystickState(i, out state))
                 {
+                    if (state.Name == "Android Accelerometer")
+                        continue;
                     var pan = Vector2.Zero;
                     var numAxises = state.Axes.Size;
                     if (numAxises > 0) pan.X = -ApplyDeadZoone(state.GetAxisPosition(0));
                     if (numAxises > 1) pan.Y = -ApplyDeadZoone(state.GetAxisPosition(1));
-                    if (pan != Vector2.Zero)
-                        Pan?.Invoke(this,
-                            new PanInteractionEventArgs(new IntVector2(_graphics.Width / 2, _graphics.Height / 2),
-                                new IntVector2((int) (pan.X * timeStep * JoystickScrollSpeed * _graphics.Width),
-                                    (int) (pan.Y * timeStep * JoystickScrollSpeed * _graphics.Height))));
+                    KeyboardPanning(timeStep, pan);
+
                     if (numAxises > 2)
                     {
                         var angle = ApplyDeadZoone(state.GetAxisPosition(2));
                         if (angle != 0.0f)
                             Rotate?.Invoke(this,
                                 new RotateInteractionEventArgs(
-                                    new IntVector2(_graphics.Width / 2, _graphics.Height / 2),
+                                    _environment.Raycast(_environment.SceenSize / 2),
                                     angle * timeStep * JoystickRotateSpeed));
                     }
                 }
@@ -424,12 +447,25 @@ namespace Urho.TopDownCamera
                 if (Input.GetKeyDown(Key.Down)) pan.Y -= 1;
                 if (Input.GetKeyDown(Key.Right)) pan.X -= 1;
                 if (Input.GetKeyDown(Key.Left)) pan.X += 1;
-                if (pan != Vector2.Zero)
-                    Pan?.Invoke(this,
-                        new PanInteractionEventArgs(new IntVector2(_graphics.Width / 2, _graphics.Height / 2),
-                            new IntVector2((int) (pan.X * timeStep * JoystickScrollSpeed * _graphics.Width),
-                                (int) (pan.Y * timeStep * JoystickScrollSpeed * _graphics.Height))));
+                KeyboardPanning(timeStep, pan);
             }
+        }
+
+        private void KeyboardPanning(float timeStep, Vector2 pan)
+        {
+            if (pan == Vector2.Zero)
+                return;
+            var delta = new IntVector2(
+                (int)(pan.X * timeStep * JoystickScrollSpeed * _environment.SceenSize.X),
+                (int)(pan.Y * timeStep * JoystickScrollSpeed * _environment.SceenSize.Y));
+            if (delta == IntVector2.Zero)
+                return;
+
+            var screenCenter = _environment.SceenSize / 2;
+            var centralContact = _environment.Raycast(screenCenter);
+            var newContact =
+                _environment.RaycastToPlane(screenCenter + delta, new Plane(Vector3.Up, centralContact.ContactPoint));
+            Pan?.Invoke(this, new PanInteractionEventArgs(centralContact, newContact));
         }
     }
 }

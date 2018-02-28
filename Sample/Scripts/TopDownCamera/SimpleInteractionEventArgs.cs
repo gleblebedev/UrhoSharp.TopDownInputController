@@ -4,17 +4,26 @@ namespace Urho.TopDownCamera
 {
     public class SimpleInteractionEventArgs:EventArgs
     {
-        private IntVector2 _position;
+        private readonly InputRaycastResult _contact;
 
-        public SimpleInteractionEventArgs(IntVector2 position)
+        public SimpleInteractionEventArgs(InputRaycastResult contact)
         {
-            Position = position;
+            _contact = contact;
         }
 
         public IntVector2 Position
         {
-            get { return _position; }
-            set { _position = value; }
+            get { return _contact.Position; }
+        }
+
+        public Ray Ray
+        {
+            get { return _contact.Ray; }
+        }
+
+        public Vector3 ContactPoint
+        {
+            get { return _contact.ContactPoint; }
         }
     }
 }

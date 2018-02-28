@@ -4,7 +4,7 @@
     {
         private readonly int _zoom;
 
-        public ZoomInteractionEventArgs(IntVector2 center, int zoom):base(center)
+        public ZoomInteractionEventArgs(InputRaycastResult contact, int zoom):base(contact)
         {
             _zoom = zoom;
         }

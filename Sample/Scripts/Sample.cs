@@ -75,7 +75,7 @@ public class SampleApp : Application
         CreateScene();
         SetupViewport();
 
-        _input = new TopDownInput(Input,Graphics);
+        _input = new TopDownInput(Input, new SimpleInputEnvironment(CameraNode.GetComponent<Camera>(), Graphics));
         _cameraController = new TopDownCameraController(_input, Graphics, CameraNode);
         _input.Enable();
     }

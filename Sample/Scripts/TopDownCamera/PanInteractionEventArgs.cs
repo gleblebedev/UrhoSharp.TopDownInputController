@@ -2,16 +2,21 @@
 {
     public class PanInteractionEventArgs : SimpleInteractionEventArgs
     {
-        private readonly IntVector2 _delta;
+        private readonly InputRaycastResult _newContact;
 
-        public PanInteractionEventArgs(IntVector2 center, IntVector2 delta) : base(center)
+        public PanInteractionEventArgs(InputRaycastResult contact, InputRaycastResult newContact) : base(contact)
         {
-            _delta = delta;
+            _newContact = newContact;
         }
 
         public IntVector2 Delta
         {
-            get { return _delta; }
+            get { return _newContact.Position-Position; }
+        }
+
+        public Vector3 Delta3D
+        {
+            get { return _newContact.ContactPoint - ContactPoint; }
         }
     }
 }

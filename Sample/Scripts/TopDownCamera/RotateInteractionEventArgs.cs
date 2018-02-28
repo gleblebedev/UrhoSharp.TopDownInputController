@@ -4,7 +4,7 @@
     {
         private readonly float _degrees;
 
-        public RotateInteractionEventArgs(IntVector2 center, float degrees) : base(center)
+        public RotateInteractionEventArgs(InputRaycastResult contact, float degrees) : base(contact)
         {
             _degrees = degrees;
         }
